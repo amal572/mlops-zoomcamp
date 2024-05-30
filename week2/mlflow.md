@@ -98,12 +98,3 @@ We initialize the run using
 ``bash
 with mlflow.start_run():
 ```
-
-and wrapping the whole run inside it.
-
-We track the relevant information using three mlflow commands:
-
-set_tag for Metadata tags
-* log_param for logging model parameters
-* log_metric for logging model metrics
-* In this instance, we may set as Metadata tags the author name, the model parameters as the training and validation data paths and alpha, and set the metric as RMSE:
