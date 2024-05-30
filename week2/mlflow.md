@@ -27,10 +27,10 @@ MLflow organizes experiments into runs and keeps track of any variables that may
 MLflow also automatically logs extra information about each run such as: Source Code, Git Commit, Start and End time and Author.
 
 ### Installing MLflow:
-pip: ``bash
+pip: ```bash
    pip install mlflow
 ```
-conda:``bash
+conda:```bash
    conda install -c conda-forge mlflow
 ```
 
@@ -40,7 +40,7 @@ MLflow has different interfaces, each with their pros and cons. We introduce the
 ### MLflow UI:
 To run the MLflow UI locally we use the command:
 
-``bash
+```bash
    mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
 The backend storage is essential to access the features of MLflow, in this command we use a SQLite backend with the file mlflow.db in the current running repository. This URI is also given later to the MLflow Python API mlflow.set_tracking_uri.
@@ -49,7 +49,7 @@ By accessing the provided local url we can access the UI. Within this UI we have
 
 In addition to the backend URI, we can also add an artifact root directory where we store the artifacts for runs, this is done by adding a --default-artifact-root paramater:
 
-``bash
+```bash
 
    mlflow ui --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlruns
 
@@ -82,7 +82,7 @@ where we set the tracking URI and the current experiment name. In case the exper
 
 We can then track a run, we'll use this simple code snippet as a starting point:
 
-``bash
+```bash
 alpha = 0.01
 
 lr = Lasso(alpha)
@@ -95,6 +95,6 @@ mean_squared_error(y_val, y_pred, squared=False)
 
 We initialize the run using
 
-``bash
-with mlflow.start_run():
+```bash
+    with mlflow.start_run():
 ```
