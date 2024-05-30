@@ -314,6 +314,31 @@ client.update_model_version(
 )
 ```
 
+### benefits, limitations and alternatives
+
+* Benefits
+
+- Share and collaborate with other members
+- More visibility into all the efforts
+
+* Limitations
+
+- Security - restricting access to the server
+- Scalability
+- Isolation - restricting access to certain artifacts
+
+* When not to use
+
+- Authentication and user profiling is required
+- Data versioning - no in-built functionality but there are work arounds
+- Model/Data monitoring and alerts are required
+
+* Alternates
+
+- Nepture.ai
+- Comet.ai
+- Weights and Biases
+
 
 
 
