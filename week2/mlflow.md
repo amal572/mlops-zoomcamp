@@ -96,5 +96,227 @@ mean_squared_error(y_val, y_pred, squared=False)
 We initialize the run using
 
 ```bash
-    with mlflow.start_run():
+with mlflow.start_run():
 ```
+and wrapping the whole run inside it.
+
+We track the relevant information using three mlflow commands:
+
+set_tag for Metadata tags
+* log_param for logging model parameters
+* log_metric for logging model metrics
+* In this instance, we may set as Metadata tags the author name, the model parameters as the training and validation data paths and alpha, and set the metric as RMSE:
+```bash
+with mlflow.start_run():
+    mlflow.set_tag("developer","Qfl3x")
+    
+    mlflow.log_param("train-data-path", "data/green_tripdata_2021-01.parquet")
+    mlflow.log_param("val-data-path", "data/green_tripdata_2021-02.parquet")
+    
+    alpha = 0.01
+    mlflow.log_param("alpha", alpha)
+    lr = Lasso(alpha)
+    lr.fit(X_train, y_train)
+    
+    y_pred = lr.predict(X_val)
+    rmse = mean_squared_error(y_val, y_pred, squared=False)
+    mlflow.log_metric("rmse", rmse)
+```
+In the MLflow UI, within the nyc-taxi-experiment we now have a run logged with our logged parameters, tag, and metric.
+
+### Hyperparameter Optimizaiton Tracking:
+By wrapping the hyperopt Optimization objective inside a with mlflow.start_run() block, we can track every optimization run that was ran by hyperopt. We then log the parameters passed by hyperopt as well as the metric as follows:
+
+```bash
+
+import xgboost as xgb
+
+from hyperopt import fmin, tpe, hp, STATUS_OK, Trials
+from hyperopt.pyll import scope
+
+train = xgb.DMatrix(X_train, label=y_train)
+valid = xgb.DMatrix(X_val, label=y_val)
+
+def objective(params):
+    with mlflow.start_run():
+        mlflow.set_tag("model", "xgboost")
+        mlflow.log_params(params)
+        booster = xgb.train(
+            params=params,
+            dtrain=train,
+            num_boost_round=1000,
+            evals=[(valid, 'validation')],
+            early_stopping_rounds=50
+        )
+        y_pred = booster.predict(valid)
+        rmse = mean_squared_error(y_val, y_pred, squared=False)
+        mlflow.log_metric("rmse", rmse)
+
+    return {'loss': rmse, 'status': STATUS_OK}
+
+search_space = {
+    'max_depth': scope.int(hp.quniform('max_depth', 4, 100, 1)),
+    'learning_rate': hp.loguniform('learning_rate', -3, 0),
+    'reg_alpha': hp.loguniform('reg_alpha', -5, -1),
+    'reg_lambda': hp.loguniform('reg_lambda', -6, -1),
+    'min_child_weight': hp.loguniform('min_child_weight', -1, 3),
+    'objective': 'reg:linear',
+    'seed': 42
+}
+
+best_result = fmin(
+    fn=objective,
+    space=search_space,
+    algo=tpe.suggest,
+    max_evals=50,
+    trials=Trials()
+)
+
+```
+
+In this block, we defined the search space and the objective than ran the optimizer. We wrap the training and validation block inside with mlflow.start_run() and log the used parameters using log_params and validation RMSE using log_metric.
+
+In the UI we can see each run of the optimizer and compare their metrics and parameters. We can also see how different parameters affect the RMSE using Parallel Coordinates Plot, Scatter Plot (1 parameter at a time) and Contour Plot.
+
+### Autologging:
+Instead of logging the parameters by "Hand" by specifiying the logged parameters and passing them. We may use the Autologging feature in MLflow. There are two ways to use Autologging; First by enabling it globally in the code/Notebook using
+
+```bash
+mlflow.autolog()
+```
+
+or by enabling the framework-specific autologger; ex with XGBoost:
+
+```bash
+mlflow.xgboost.autolog()
+```
+Both must be done before running the experiments.
+
+The autologger then not only stores the model parameters for ease of use, it also stores other files inside the model (can be specified) folder inside our experiment artifact folder, these files include:
+
+* conda.yaml and requirements.txt: Files which define the current envrionment for use with either conda or pip respectively
+* MLmodel an internal MLflow file for organization
+* Other framework-specific files such as the model itself
+
+### Saving Models:
+We may use MLflow to log whole models for storage (see Model Registry later), to do this we add a line to our with mlflow.start_run() block:
+
+```bash
+mlflow.<framework>.log_model(model, artifact_path="models_mlflow")
+```
+where we replace the <framework> wih our model's framework (ex: sklearn, xgboost...etc). The artifact_path defines where in the artifact_uri the model is stored.
+
+We now have our model inside our models_mlflow directory in the experiment folder. (Using Autologging would store more data on parameters as well as the model. i.e: This is redundant when using the autologger)
+
+### Saving Artifacts with the Model:
+Sometimes we may want to save some artifacts with the model, for example in our case we may want to save the DictVectorizer object with the model for inference (subsequently testing as well). In that case we save the artifact as:
+
+```bash
+mlflow.log_artifact("vectorizer.pkl", artifact_path="extra_artifacts")
+```
+Where vectorizer.pkl is the vectorizer stored in a Pickle file and extra_artifacts the folder within the artifacts of the model where the file is stored.
+
+### Loading Models:
+We can use the model to make predictions with multiple ways depending on what we need:
+
+* We may load the model as a Spark UDF (User Defined Function) for use with Spark Dataframes
+* We may load the model as a MLflow PyFuncModel structure, to then use to predict data in a Pandas DataFrame, NumPy Array or SciPy Sparse Array. The obtained interface is general for all models from all frameworks
+* We may load the model as is, i.e: load the XGBoost model as an XGBoost model and treat it as such
+The first two methods are explained briefly in the MLflow artifacts page for each run, for the latter we may use (XGBoost example):
+
+```bash
+logged_model = 'runs:/9245396b47c94513bbf9a119b100aa47/models' # Model UUID from the MLflow Artifact page for the run
+
+xgboost_model = mlflow.xgboost.load_model(logged_model)
+```
+the resultant xgboost_model is an XGBoost Booster object which behaves like any XGBoost model. We can predict as normal and even use XGBoost Booster functions such as get_fscore for feature importance.
+
+### Model Registry:
+Just as MLflow helps us store, compare and deal with ML experiment runs. It also allows us to store Models and categoerize them. While it may be possible to store models in a folder structure manually, doing this is cumbersome and leaves us open to errors. MLflow deals with this using the Model Registry, where models may be stored and labeled depending on their status within the project.
+
+#### Storing Models in the Registry:
+
+In order to register models using the UI, we select the run whose model we want to register and then select "Register Model". There we may either create a new model registry or register the model into an existing registry. We can view the registry and the models therein by selecting the "Models" tab in the top and selecting the registry we want.
+
+#### Promoting and Demoting Models in the registry:
+
+Models in the registry are labeled either as Staging, Production or Archive. Promoting and demoting a model can be done by selecting the model in the registry and selecting the stage of the model in the drop down "Stage" Menu at the top.
+
+### Interacting with MLflow through the Tracking Client:
+In order to automate the process of registering/promoting/demoting models, we use the Tracking Client API initialized as described above:
+
+```bash
+from mlflow.tracking import MlflowClient
+
+MLFLOW_TRACKING_URI = "sqlite:///mlflow.db"
+
+client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+```
+
+we can then use the client to interface with the MLflow backend as with the UI.
+
+### Selecting runs:
+We can search for runs by ascending order of metric score using the API by:
+```bash
+from mlflow.entities import ViewType
+
+runs = client.search_runs(
+    experiment_ids='1',    # Experiment ID we want
+    filter_string="metrics.rmse < 7",
+    run_view_type=ViewType.ACTIVE_ONLY,
+    max_results=5,
+    order_by=["metrics.rmse ASC"]
+)
+```
+We can then get information about the selected runs from the resulting runs enumerator:
+```bash
+for run in runs:
+    print(f"run id: {run.info.run_id}, rmse: {run.data.metrics['rmse']:.4f}")
+```
+### Interacting with the Model Registry:
+
+We can add a run model to a registry using:
+```bash
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+run_id = "9245396b47c94513bbf9a119b100aa47"
+model_uri = f"runs:/{run_id}/models"
+mlflow.register_model(model_uri=model_uri, name="nyc-taxi-regressor")
+```
+we can get the models in a model registry:
+```bash
+model_name = "nyc-taxi-regressor"
+latest_versions = client.get_latest_versions(name=model_name)
+
+for version in latest_versions:
+    print(f"version: {version.version}, stage: {version.current_stage}")
+```
+promote a model to staging:
+```bash
+model_version = 4
+new_stage = "Staging"
+client.transition_model_version_stage(
+    name=model_name,
+    version=model_version,
+    stage=new_stage,
+    archive_existing_versions=False
+)
+```
+update the description of a model:
+```bash
+from datetime import datetime
+
+date = datetime.today().date()
+client.update_model_version(
+    name=model_name,
+    version=model_version,
+    description=f"The model version {model_version} was transitioned to {new_stage} on {date}"
+)
+```
+
+
+
+
+
+
+
